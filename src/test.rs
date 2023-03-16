@@ -1,50 +1,51 @@
-#[cfg(test)]
-mod tests {
-    use std::process::Command;
-    use std::path::Path;
-    use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
 
-    #[test]
-    fn test_readme_tasks() {
-        let file_name = "README.md";
-        let expected_output = "README.md がありません\n";
-        let readme_tasks = "### Task 1\nTask 1 Description\n```echo \"Task 1 Execution\"```\n\n### Task 2\nTask 2 Description\n```echo \"Task 2 Execution\"```\n";
+fn execute_xmd(task: Option<&str>, file: Option<&str>) -> (String, bool) {
+    let mut cmd = Command::new("cargo");
+    cmd.arg("run");
+    cmd.arg("--");
 
-        // Prepare test directory with README.md file
-        let dir = tempfile::tempdir().unwrap();
-        let readme_path = Path::new(dir.path()).join(file_name);
-        fs::write(readme_path.clone(), readme_tasks).unwrap();
-
-        // Test case 1: README.md file does not exist
-        fs::remove_file(readme_path.clone()).unwrap();
-        let output = Command::new("cargo")
-            .args(&["run", "--"])
-            .output()
-            .unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout), expected_output);
-
-        // Test case 2: Task name is not provided
-        let expected_output = "Task 1\tTask 1 Description\nTask 2\tTask 2 Description\n";
-        let output = Command::new("cargo")
-            .args(&["run", "--", readme_path.to_str().unwrap()])
-            .output()
-            .unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout), expected_output);
-
-        // Test case 3: Task name is provided and exists
-        let expected_output = "Task 2 Execution\n";
-        let output = Command::new("cargo")
-            .args(&["run", "--", readme_path.to_str().unwrap(), "Task 2"])
-            .output()
-            .unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout), expected_output);
-
-        // Test case 4: Task name is provided but does not exist
-        let expected_output = "Task 3 does not exist\n";
-        let output = Command::new("cargo")
-            .args(&["run", "--", readme_path.to_str().unwrap(), "Task 3"])
-            .output()
-            .unwrap();
-        assert_eq!(String::from_utf8_lossy(&output.stdout), expected_output);
+    if let Some(t) = task {
+        cmd.arg(t);
     }
+
+    if let Some(f) = file {
+        cmd.arg("-f");
+        cmd.arg(f);
+    }
+
+    let output = cmd.output().expect("Failed to execute command");
+    let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+
+    (output_str, output.status.success())
+}
+
+#[test]
+fn test_no_readme() {
+    let (output, success) = execute_xmd(None, Some("non_existing_file.md"));
+    assert!(!success);
+    assert_eq!(output.trim(), "README.md がありません");
+}
+
+#[test]
+fn test_list_tasks() {
+    let (output, success) = execute_xmd(None, None);
+    assert!(success);
+    assert!(output.contains("タスク名1\tヘルプ文1"));
+    assert!(output.contains("タスク名2\tヘルプ文2"));
+}
+
+#[test]
+fn test_execute_task() {
+    let (output, success) = execute_xmd(Some("タスク名1"), None);
+    assert!(success);
+    assert_eq!(output.trim(), "タスク1の実行結果");
+}
+
+#[test]
+fn test_invalid_task() {
+    let (output, success) = execute_xmd(Some("無効なタスク"), None);
+    assert!(!success);
+    assert_eq!(output.trim(), "無効なタスクは存在しません");
 }
